@@ -2,25 +2,16 @@ import requests
 import base64
 import random
 import argparse
+from changanya.simhash import Simhash
+
+# cookie = ''
+res_404 = []
 
 
 def get_headers():
-    # cookie = ''
-    user_agent = ['Mozilla/5.0 (Windows; U; Win98; en-US; rv:1.8.1) Gecko/20061010 Firefox/2.0',
-                  'Mozilla/5.0 (Windows; U; Windows NT 5.0; en-US) AppleWebKit/532.0 (KHTML, like Gecko) Chrome/3.0.195.6 Safari/532.0',
-                  'Mozilla/5.0 (Windows; U; Windows NT 5.1 ; x64; en-US; rv:1.9.1b2pre) Gecko/20081026 Firefox/3.1b2pre',
-                  'Opera/10.60 (Windows NT 5.1; U; zh-cn) Presto/2.6.30 Version/10.60',
-                  'Opera/8.01 (J2ME/MIDP; Opera Mini/2.0.4062; en; U; ssr)',
-                  'Mozilla/5.0 (Windows; U; Windows NT 5.1; ; rv:1.9.0.14) Gecko/2009082707 Firefox/3.0.14',
-                  'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/51.0.2704.106 Safari/537.36',
-                  'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/57.0.2987.133 Safari/537.36',
-                  'Mozilla/5.0 (Windows; U; Windows NT 6.0; fr; rv:1.9.2.4) Gecko/20100523 Firefox/3.6.4 ( .NET CLR 3.5.30729)',
-                  'Mozilla/5.0 (Windows; U; Windows NT 6.0; fr-FR) AppleWebKit/528.16 (KHTML, like Gecko) Version/4.0 Safari/528.16',
-                  'Mozilla/5.0 (Windows; U; Windows NT 6.0; fr-FR) AppleWebKit/533.18.1 (KHTML, like Gecko) Version/5.0.2 Safari/533.18.5']
-    UA = random.choice(user_agent)
     headers = {
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-        'User-Agent': UA,
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/64.0.3282.186 Safari/537.36',
         'Upgrade-Insecure-Requests': '1',
         'Connection': 'keep-alive',
         'Cache-Control': 'max-age=0',
@@ -32,14 +23,50 @@ def get_headers():
 
 
 def random_str():
-    key = random.random() * 100
-    return base64.b64encode(str(key).encode()).decode().replace('=', '')
+    ran = random.random() * 100
+    return base64.b64encode(str(ran).encode()).decode().replace('=', '')
 
 
-def file_scan(url):
+def is_similar_page(res1, res2, radio=0.85):
+    if res1 is None or res2 is None:
+        return False
+    body1 = res1.text
+    body2 = res2.text
+    simhash1 = Simhash(body1.split())
+    simhash2 = Simhash(body2.split())
+    calc_radio = simhash1.similarity(simhash2)
+    if calc_radio > radio:
+        return True
+    else:
+        return False
+
+
+def generate_404(domain_url):
     ran_str = random_str()
+    generate_404_url = domain_url + '/' + ran_str
+    print('[*] Now is generate_404: ' + generate_404_url)
     headers = get_headers()
-    dirs = []
+    resp_404 = requests.get(generate_404_url, verify=True, headers=headers, timeout=3)
+    resp_200 = requests.get(domain_url, verify=True, headers=headers, timeout=3)
+    res_404.append(resp_404)
+    if is_similar_page(resp_200, resp_404):
+        print('[*] 404 page is similar to index page.')
+        print('[*] Maybe Got waf.')
+        # res_404.append(resp_200)
+
+
+def is_404(res):
+    if res.status_code == 404:
+        return True
+    for resp_404 in res_404:
+        if is_similar_page(res, resp_404):
+            return True
+    return False
+
+
+def file_scan(domain_url):
+    headers = get_headers()
+    results = []
     payloads = ["/robots.txt", "/README.md", "/crossdomain.xml", "/.git/config", "/.svn/entries", "/.svn/wc.db",
                 "/.DS_Store", "/CVS/Root", "/CVS/Entries", "/.idea/workspace.xml"]
     payloads += ["/index.htm", "/index.html", "/index.php", "/index.asp", "/index.aspx", "/index.jsp", "/index.do",
@@ -71,27 +98,25 @@ def file_scan(url):
     payloads += ["/www.7z", "/www.rar", "/www.zip", "/www.tar.gz", "/wwwroot.zip", "/wwwroot.rar", "/wwwroot.7z",
                  "/wwwroot.tar.gz", "/backup.7z", "/backup.rar", "/backup.tar", "/backup.tar.gz", "/backup.zip",
                  "/index.7z", "/index.rar", "/index.sql", "/index.tar", "/index.tar.gz", "/index.zip"]
-    if url[-1:] == '/':
-        url = url[:-1]
+    if domain_url[-1:] == '/':
+        domain_url = domain_url[:-1]
     try:
-        check_url = url + '/' + ran_str
-        print('[*] Now is check waf: ' + check_url)
-        check_waf = requests.get(check_url, verify=True, timeout=3)
+        generate_404(domain_url)
         for payload in payloads:
             try:
-                req = requests.get(url + payload, verify=True, timeout=3)
-                if req.status_code == 200 and abs(len(check_waf.text) - 10 - len(req.text)) > 10:
-                    print('[+] Get %s 200' % (url+payload))
-                    dirs.append(payload)
+                res = requests.get(domain_url + payload, verify=True, headers=headers, timeout=3)
+                if is_404(res) is False:
+                    print('[+] Get %s 200' % (domain_url+payload))
+                    results.append(payload)
             except:
                 pass
     except:
         pass
-    if len(dirs) > 40:
+    if len(results) > 40:
         print('[*] Maybe Got waf.')
         return '[]'
     else:
-        return dirs
+        return results
 
 
 if __name__ == "__main__":
