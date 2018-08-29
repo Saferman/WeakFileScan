@@ -2,7 +2,7 @@ import requests
 import base64
 import random
 import argparse
-from changanya.simhash import Simhash
+from simhashx import simhash
 
 # cookie = ''
 res_404 = []
@@ -32,8 +32,8 @@ def is_similar_page(res1, res2, radio=0.85):
         return False
     body1 = res1.text
     body2 = res2.text
-    simhash1 = Simhash(body1.split())
-    simhash2 = Simhash(body2.split())
+    simhash1 = simhash(body1.split())
+    simhash2 = simhash(body2.split())
     calc_radio = simhash1.similarity(simhash2)
     if calc_radio > radio:
         return True
