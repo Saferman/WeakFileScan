@@ -4,9 +4,6 @@ a small WeakFileScanner for CTF
 
 (e.g.  robots.txt  index.swp  .git/config  .svn/entries  index.phps  ......)
 
-```
-pip install changanya
-```
 
 ```
 Usage :
